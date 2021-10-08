@@ -1,0 +1,3 @@
+#You need to create csv file with the emails accounts then it will export an new file with the SAMACCOUNTs#
+
+Get-Content "C:\xx\xx\Desktop\xx\xxxx\usersaddress.csv" | %{ Get-ADUser -Filter {EmailAddress -eq $_} } | Select SamAccountName | Export-CSV "C:\xxx\xxx\Desktop\xx\samaccount\sam.csv"
