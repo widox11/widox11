@@ -1,0 +1,10 @@
+#You need to create a csv file with the samaccounts name. You can modify the attributes according that you need and the end it will provide you a new csv file with the information#
+
+$UserNamesList = get-content -path "C:\xx\xx\xx\xx\attributes\sam.csv"
+$exportPath = "C:\xx\xx\xx\xx\attributes\details.csv"
+ 
+foreach ($name in $UserNamesList){
+ 
+Get-ADUser $name -Properties msExchRecipientTypeDetails, accountexpirationdate, LastLogonDate | Export-CSV $ExportPath -Append -NoTypeInformation
+ 
+}
