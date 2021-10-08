@@ -1,0 +1,4 @@
+- 👋 Hi, I’m @widox11
+- 👀 I’m interested in powershell scripts
+- 🌱 I’m currently learning powershell
+- 💞️ I’m looking to collaborate on scripting
