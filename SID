@@ -1,0 +1,7 @@
+#Get the SID of a username#
+get-aduser "username" -Properties sid | select sid
+
+#Resolve object SID to username#
+$objSID = New-Object System.Security.Principal.SecurityIdentifier("SIDNUMBER")
+$objUser = $objSID.Translate( [System.Security.Principal.NTAccount])
+$objUser.Value
