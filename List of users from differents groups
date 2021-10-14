@@ -1,0 +1,12 @@
+$CustomResult=@() 
+$groups = Get-Content "C:\groups.txt"           
+$Groups | ForEach-Object {
+$group = $_
+Get-ADGroupMember $group | ForEach-Object {
+$CustomResult += [PSCustomObject] @{ 
+                GroupName = $group
+                Member = $_.Name
+            }           
+  }
+}
+$CustomResult | Export-CSV "C:\ad-group-members.csv" -NoTypeInformation -Encoding UTF8
