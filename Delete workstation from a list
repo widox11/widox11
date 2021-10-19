@@ -1,0 +1,13 @@
+Import-Module ActiveDirectory 
+#Create a file the list of workstation/computers
+$File = "c:\xxx\xxxx\desktop\computers.txt"
+
+ForEach ($Computer in (Get-Content $File))
+{   Try {
+        Remove-ADComputer $Computer -Confirm:$false -ErrorAction Stop
+        Add-Content c:\xxxx\xxxx\desktop\remove-mycomputers.log -Value "$Computer removed"
+    }
+    Catch {
+        Add-Content c:\xxx\xxxxm\desktop\remove-mycomputers.log -Value "$Computer not found because $($Error[0])"
+    }
+}
