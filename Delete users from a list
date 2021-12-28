@@ -1,0 +1,15 @@
+#This is to remove users from CSV file. Create a CSV file with the samaccountname to remove it. 
+
+Import-Module ActiveDirectory
+$Users = Import-Csv C:\xxxx\xxxx\Terminatedusers.csv
+
+ForEach ($User in $Users)
+{
+    # Retrieve user to make sure they exist.
+    $ADUser = Get-ADUser -Identity $User.sAMAccountName
+    If ($ADUser)
+    {
+        # Delete the user.
+        Remove-ADUser -Identity $User.sAMAccountName -Confirm:$false
+    }
+}
