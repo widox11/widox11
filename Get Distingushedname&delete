@@ -1,0 +1,16 @@
+# We get the properties from a specific OU
+Get-ADuser -Filter * -Properties * | where{$_.DistinguishedName -like "*Ou=xxx,DC=xxx,DC=xxx*"} | Select DistinguishedName | Export-csv C:\users\administrators\xxxx.csv
+
+
+Import-Module ActiveDirectory
+$Users = Import-Csv C:\Users\xxxx\Desktop\deleteusers\users.csv
+
+ForEach ($User in $Users)
+{
+    # Retrieve user/object to make sure they exist.
+    $ADUser = Get-ADObject -Identity $User.DistinguishedName
+    If ($ADUser)
+    {        # Delete the user/object.
+        Remove-ADUser -Identity $User.DistinguishedName -Confirm:$false 
+    }
+} 
