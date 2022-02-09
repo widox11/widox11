@@ -14,3 +14,19 @@ ForEach ($User in $Users)
         Remove-ADUser -Identity $User.DistinguishedName -Confirm:$false 
     }
 } 
+
+# We get the properties from a specific OU
+Get-ADuser -Filter * -Properties * | where{$_.DistinguishedName -like "*Ou=xxx,DC=xxx,DC=xxx*"} | Select DistinguishedName | Export-csv C:\users\administrators\xxxx.csv
+
+
+Other with results
+
+$users = Get-Content "c:\Work\Users5.txt"
+foreach ($user in $users) {
+$userobj = $(try {Get-ADUser $user} catch {$Null})
+If ($userobj -ne $Null) {
+    Remove-ADObject -Identity $user -Recursive -Confirm:$false
+    Write-Host "$user Deleted" -foregroundcolor "green"
+} else {
+    Write-Host "$user not found " -foregroundcolor "red"
+}}
