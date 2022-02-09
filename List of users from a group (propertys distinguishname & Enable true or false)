@@ -1,2 +1,8 @@
 #It is to get a list of users from a group and you will get the distinguishedName and Enabled. It will export to csv file.
 Get-ADGroupMember -Identity "groupxx" -Recursive | Get-ADUser | Select distinguishedName,Enabled | Export-Csv C:\xxxs\xxx\xxx\listuser.csv -NoTypeInformation 
+
+
+OR
+
+#Test 2
+Get-ADUser -Filter * -SearchBase "DN" -properties * |  Select name,samAccountname,distinguishedName,Enabled | Export-Csv C:\Users\xxx\Desktop\xxx\Listuserslistuser.csv -NoTypeInformation
