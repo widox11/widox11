@@ -1,0 +1,1 @@
+Get-ADGroup -filter * -properties * -searchbase "DC=xxx,DC=xxx" | Select SAMAccountName, DistinguishedName, Description | Export-Csv -path C:\Users\xxx\List.csv -NoTypeInformation
