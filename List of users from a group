@@ -2,3 +2,8 @@ $GroupName = "NAME"
 Get-ADGroupMember -Identity $GroupName | Where-Object {$_.ObjectClass -eq "User"} | 
 Select Name, SamAccountName |
 Export-CSV "C:\xxx\xxx\Desktop\ADGroupMembers.csv" -NoTypeInformation -Encoding UTF8
+
+
+#Other it shows the groups and users
+$groups = Get-ADGroup -Filter * -SearchBase 'CN=xx,DC=xx,DC=xx'
+$groups |Select-Object @{Expression={$_.Name};Label='Group Name'},@{Expression={@(Get-ADGroupMember -Identity $_|Select -Expand Name) -join ';'};Label='Name'} | Export-CSV  C:\Users\xx\BIGroups.CSV -NoTypeInformation -append
