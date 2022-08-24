@@ -1,0 +1,1 @@
+PS C:\> Copy-GPO -SourceName "TestGpo1" -SourceDomain "test.contoso.com" TargetName "TestGpo1" -TargetDomain "sales.contoso.com"
