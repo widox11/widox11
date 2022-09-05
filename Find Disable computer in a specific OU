@@ -1,2 +1,5 @@
 # This line Find the disable computer in a specific OU. You can add more properties to export in the csv-
 Get-ADComputer -Filter {(Enabled -eq $False)} -SearchBase "OU=xx,DC=xx,DC=xx,DC=xx" -Properties * | Select Name,distinguishedname,Enabled |  Export-CSV “C:\Disabledwks.CSV” -NoTypeInformation
+
+# This line Find the disable computer in a specific OU. It will show you the last logon with the date.
+Get-ADComputer -Filter {(Enabled -eq $False)} -SearchBase "OU=xxx,DC=as,DC=xxx,DC=xx" -Properties * | Sort LastLogon | Select Name,distinguishedname,Enabled,lastlogondate,@{Name='LastLogon';Expression={[DateTime]::FromFileTime($_.LastLogon)}}|  Export-CSV “C:\Disabledwks.CSV” -NoTypeInformation
