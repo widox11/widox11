@@ -1,0 +1,2 @@
+# This line Find the disable computer in a specific OU. You can add more properties to export in the csv-
+Get-ADComputer -Filter {(Enabled -eq $False)} -SearchBase "OU=xx,DC=xx,DC=xx,DC=xx" -Properties * | Select Name,distinguishedname,Enabled |  Export-CSV “C:\Disabledwks.CSV” -NoTypeInformation
