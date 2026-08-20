@@ -1,0 +1,568 @@
+# ============================================
+
+# Reporte DRS Groups y Rules para un cluster
+
+# Solo lectura - No modifica nada en vCenter
+
+# ============================================
+ 
+# Variables
+
+$vCenter = "namexxx.com"
+
+$ClusterName = "clusternamexxx"
+
+$OutputPath = "c:\temp"
+ 
+Write-Host "Modo solo lectura: este script no modifica configuracion en vCenter." -ForegroundColor Green
+ 
+# Crear carpeta de salida si no existe
+
+# Esto solo modifica el filesystem local, no vCenter
+
+if (!(Test-Path $OutputPath)) {
+
+    New-Item -ItemType Directory -Path $OutputPath | Out-Null
+
+}
+ 
+# Conectar a vCenter
+
+Connect-VIServer $vCenter
+ 
+# Obtener cluster
+
+$Cluster = Get-Cluster -Name $ClusterName -ErrorAction Stop
+ 
+Write-Host "Procesando cluster: $($Cluster.Name)" -ForegroundColor Cyan
+ 
+# Obtener vista avanzada del cluster
+
+$ClusterView = Get-View $Cluster.Id
+ 
+# Obtener grupos y reglas evitando valores null
+
+$Groups = @($ClusterView.ConfigurationEx.Group | Where-Object { $_ -ne $null })
+
+$Rules  = @($ClusterView.ConfigurationEx.Rule  | Where-Object { $_ -ne $null })
+ 
+$GroupsReport = @()
+
+$RulesReport = @()
+ 
+# ============================================
+
+# Crear mapa de uso de grupos por reglas
+
+# ============================================
+ 
+$GroupUsage = @{}
+ 
+foreach ($Group in $Groups) {
+
+    $GroupUsage[$Group.Name] = @()
+
+}
+ 
+foreach ($Rule in $Rules) {
+ 
+    $RuleType = $Rule.GetType().Name
+ 
+    if ($RuleType -eq "ClusterVmHostRuleInfo") {
+ 
+        if ($Rule.VmGroupName -and $GroupUsage.ContainsKey($Rule.VmGroupName)) {
+
+            $GroupUsage[$Rule.VmGroupName] += $Rule.Name
+
+        }
+ 
+        if ($Rule.AffineHostGroupName -and $GroupUsage.ContainsKey($Rule.AffineHostGroupName)) {
+
+            $GroupUsage[$Rule.AffineHostGroupName] += $Rule.Name
+
+        }
+ 
+        if ($Rule.AntiAffineHostGroupName -and $GroupUsage.ContainsKey($Rule.AntiAffineHostGroupName)) {
+
+            $GroupUsage[$Rule.AntiAffineHostGroupName] += $Rule.Name
+
+        }
+
+    }
+
+}
+ 
+# ============================================
+
+# Reporte de VM Groups y Host Groups
+
+# ============================================
+ 
+if ($Groups.Count -eq 0) {
+ 
+    Write-Host "El cluster $($Cluster.Name) no tiene DRS Groups." -ForegroundColor Yellow
+ 
+    $GroupsReport += [PSCustomObject]@{
+
+        Cluster         = $Cluster.Name
+
+        GroupName       = "N/A"
+
+        GroupType       = "N/A"
+
+        MemberCount     = 0
+
+        Members         = ""
+
+        UsedByRules     = $false
+
+        UsedByRuleNames = ""
+
+        Status          = "No DRS groups found"
+
+        Recommendation  = "No hay grupos DRS configurados en este cluster"
+
+    }
+ 
+}
+
+else {
+ 
+    foreach ($Group in $Groups) {
+ 
+        $GroupType = $Group.GetType().Name
+
+        $Members = @()
+
+        $MemberCount = 0
+ 
+        if ($GroupType -eq "ClusterVmGroup") {
+ 
+            if ($Group.Vm) {
+
+                $Members = $Group.Vm | ForEach-Object {
+
+                    try {
+
+                        (Get-View $_).Name
+
+                    }
+
+                    catch {
+
+                        "VM_Not_Found"
+
+                    }
+
+                }
+
+            }
+
+        }
+
+        elseif ($GroupType -eq "ClusterHostGroup") {
+ 
+            if ($Group.Host) {
+
+                $Members = $Group.Host | ForEach-Object {
+
+                    try {
+
+                        (Get-View $_).Name
+
+                    }
+
+                    catch {
+
+                        "Host_Not_Found"
+
+                    }
+
+                }
+
+            }
+
+        }
+ 
+        $MemberCount = @($Members).Count
+ 
+        $UsedByRuleNames = @()
+
+        if ($GroupUsage.ContainsKey($Group.Name)) {
+
+            $UsedByRuleNames = @($GroupUsage[$Group.Name])
+
+        }
+ 
+        $UsedByRules = $UsedByRuleNames.Count -gt 0
+ 
+        $Status = "OK"
+
+        $Recommendation = "Mantener"
+ 
+        if ($MemberCount -eq 0 -and -not $UsedByRules) {
+
+            $Status = "Empty and unused"
+
+            $Recommendation = "Candidato a eliminar"
+
+        }
+
+        elseif ($MemberCount -eq 0 -and $UsedByRules) {
+
+            $Status = "Empty but referenced by rule"
+
+            $Recommendation = "Revisar urgente: grupo vacio usado por regla"
+
+        }
+
+        elseif ($MemberCount -gt 0 -and -not $UsedByRules) {
+
+            $Status = "With members but unused"
+
+            $Recommendation = "Revisar si todavia se necesita"
+
+        }
+ 
+        $GroupsReport += [PSCustomObject]@{
+
+            Cluster         = $Cluster.Name
+
+            GroupName       = $Group.Name
+
+            GroupType       = $GroupType
+
+            MemberCount     = $MemberCount
+
+            Members         = ($Members -join "; ")
+
+            UsedByRules     = $UsedByRules
+
+            UsedByRuleNames = ($UsedByRuleNames -join "; ")
+
+            Status          = $Status
+
+            Recommendation  = $Recommendation
+
+        }
+
+    }
+
+}
+ 
+# ============================================
+
+# Reporte de DRS Rules
+
+# ============================================
+ 
+if ($Rules.Count -eq 0) {
+ 
+    Write-Host "El cluster $($Cluster.Name) no tiene DRS Rules." -ForegroundColor Yellow
+ 
+    $RulesReport += [PSCustomObject]@{
+
+        Cluster              = $Cluster.Name
+
+        RuleName             = "N/A"
+
+        RuleType             = "N/A"
+
+        Enabled              = ""
+
+        Mandatory            = ""
+
+        VmGroupName          = ""
+
+        HostGroupName        = ""
+
+        HostAffinityType     = ""
+
+        VMGroupExists        = $false
+
+        HostGroupExists      = $false
+
+        VMGroupMemberCount   = 0
+
+        HostGroupMemberCount = 0
+
+        VMs                  = ""
+
+        Hosts                = ""
+
+        Status               = "No DRS rules found"
+
+        Recommendation       = "No hay reglas DRS configuradas en este cluster"
+
+    }
+ 
+}
+
+else {
+ 
+    foreach ($Rule in $Rules) {
+ 
+        $RuleType = $Rule.GetType().Name
+ 
+        $VmGroupName = ""
+
+        $HostGroupName = ""
+
+        $HostAffinityType = ""
+
+        $VMs = @()
+
+        $Hosts = @()
+
+        $VMGroupExists = $false
+
+        $HostGroupExists = $false
+
+        $VMGroupMemberCount = 0
+
+        $HostGroupMemberCount = 0
+ 
+        # Reglas VM/Host
+
+        if ($RuleType -eq "ClusterVmHostRuleInfo") {
+ 
+            $VmGroupName = $Rule.VmGroupName
+ 
+            if ($Rule.AffineHostGroupName) {
+
+                $HostGroupName = $Rule.AffineHostGroupName
+
+                $HostAffinityType = "Affine"
+
+            }
+ 
+            if ($Rule.AntiAffineHostGroupName) {
+
+                $HostGroupName = $Rule.AntiAffineHostGroupName
+
+                $HostAffinityType = "AntiAffine"
+
+            }
+ 
+            $VMGroup = $Groups | Where-Object { $_.Name -eq $VmGroupName }
+
+            $HostGroup = $Groups | Where-Object { $_.Name -eq $HostGroupName }
+ 
+            if ($VMGroup) {
+
+                $VMGroupExists = $true
+ 
+                if ($VMGroup.Vm) {
+
+                    $VMs = $VMGroup.Vm | ForEach-Object {
+
+                        try {
+
+                            (Get-View $_).Name
+
+                        }
+
+                        catch {
+
+                            "VM_Not_Found"
+
+                        }
+
+                    }
+
+                }
+ 
+                $VMGroupMemberCount = @($VMs).Count
+
+            }
+ 
+            if ($HostGroup) {
+
+                $HostGroupExists = $true
+ 
+                if ($HostGroup.Host) {
+
+                    $Hosts = $HostGroup.Host | ForEach-Object {
+
+                        try {
+
+                            (Get-View $_).Name
+
+                        }
+
+                        catch {
+
+                            "Host_Not_Found"
+
+                        }
+
+                    }
+
+                }
+ 
+                $HostGroupMemberCount = @($Hosts).Count
+
+            }
+
+        }
+ 
+        # Reglas VM-VM Affinity / Anti-Affinity
+
+        if ($RuleType -ne "ClusterVmHostRuleInfo") {
+ 
+            if ($Rule.Vm) {
+
+                $VMs = $Rule.Vm | ForEach-Object {
+
+                    try {
+
+                        (Get-View $_).Name
+
+                    }
+
+                    catch {
+
+                        "VM_Not_Found"
+
+                    }
+
+                }
+ 
+                $VMGroupMemberCount = @($VMs).Count
+
+            }
+
+        }
+ 
+        # Diagnostico de la regla
+
+        $Status = "OK"
+
+        $Recommendation = "Mantener"
+ 
+        if ($Rule.Enabled -eq $false) {
+
+            $Status = "Disabled"
+
+            $Recommendation = "Revisar si puede eliminarse"
+
+        }
+ 
+        if ($RuleType -eq "ClusterVmHostRuleInfo") {
+ 
+            if (-not $VMGroupExists) {
+
+                $Status = "VM Group missing"
+
+                $Recommendation = "Revisar urgente: regla apunta a VM Group inexistente"
+
+            }
+
+            elseif (-not $HostGroupExists) {
+
+                $Status = "Host Group missing"
+
+                $Recommendation = "Revisar urgente: regla apunta a Host Group inexistente"
+
+            }
+
+            elseif ($VMGroupMemberCount -eq 0 -and $HostGroupMemberCount -eq 0) {
+
+                $Status = "VM and Host groups empty"
+
+                $Recommendation = "Candidato fuerte a eliminar"
+
+            }
+
+            elseif ($VMGroupMemberCount -eq 0) {
+
+                $Status = "VM Group empty"
+
+                $Recommendation = "Revisar: regla sin VMs efectivas"
+
+            }
+
+            elseif ($HostGroupMemberCount -eq 0) {
+
+                $Status = "Host Group empty"
+
+                $Recommendation = "Revisar: regla sin hosts efectivos"
+
+            }
+
+        }
+ 
+        if (($RuleType -ne "ClusterVmHostRuleInfo") -and ($VMGroupMemberCount -eq 0)) {
+
+            $Status = "No VMs referenced"
+
+            $Recommendation = "Revisar si la regla sigue siendo necesaria"
+
+        }
+ 
+        $RulesReport += [PSCustomObject]@{
+
+            Cluster              = $Cluster.Name
+
+            RuleName             = $Rule.Name
+
+            RuleType             = $RuleType
+
+            Enabled              = $Rule.Enabled
+
+            Mandatory            = $Rule.Mandatory
+
+            VmGroupName          = $VmGroupName
+
+            HostGroupName        = $HostGroupName
+
+            HostAffinityType     = $HostAffinityType
+
+            VMGroupExists        = $VMGroupExists
+
+            HostGroupExists      = $HostGroupExists
+
+            VMGroupMemberCount   = $VMGroupMemberCount
+
+            HostGroupMemberCount = $HostGroupMemberCount
+
+            VMs                  = ($VMs -join "; ")
+
+            Hosts                = ($Hosts -join "; ")
+
+            Status               = $Status
+
+            Recommendation       = $Recommendation
+
+        }
+
+    }
+
+}
+ 
+# ============================================
+
+# Exportar CSV
+
+# ============================================
+ 
+$SafeClusterName = $Cluster.Name -replace '[\\/:*?"<>|]', '_'
+ 
+$GroupsCsv = Join-Path $OutputPath "DRS_Groups_Report_$SafeClusterName.csv"
+
+$RulesCsv  = Join-Path $OutputPath "DRS_Rules_Report_$SafeClusterName.csv"
+ 
+# Se usa delimitador ; para que Excel en español lo lea mejor
+
+$GroupsReport | Export-Csv $GroupsCsv -NoTypeInformation -Encoding UTF8 -Delimiter ';'
+
+$RulesReport  | Export-Csv $RulesCsv  -NoTypeInformation -Encoding UTF8 -Delimiter ';'
+ 
+Write-Host ""
+
+Write-Host "Reportes generados correctamente:" -ForegroundColor Green
+
+Write-Host $GroupsCsv
+
+Write-Host $RulesCsv
+ 
