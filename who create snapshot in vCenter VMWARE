@@ -1,0 +1,282 @@
+Script para Permisos de CREAR SNAPSHOTS
+ 
+ 
+# ============================
+
+# CONFIGURACION
+
+# ============================
+
+$vCenter = "namexxxx.com"
+ 
+$csvResumenPath = "C:\temp\Roles_CreateSnapshot_Resumen.csv"
+
+$csvDetallePath = "C:\temp\Usuarios_Grupos_CreateSnapshot_Detalle.csv"
+ 
+$snapshotPrivId = "VirtualMachine.State.CreateSnapshot"
+ 
+# ============================
+
+# OPCIONAL: ignorar certificado solo en esta sesion
+
+# ============================
+
+Set-PowerCLIConfiguration -Scope Session -InvalidCertificateAction Ignore -Confirm:$false | Out-Null
+ 
+# ============================
+
+# CONEXION A VCENTER
+
+# ============================
+
+Connect-VIServer $vCenter
+ 
+# ============================
+
+# OBTENER TODOS LOS PERMISOS UNA SOLA VEZ
+
+# ============================
+
+Write-Host "Obteniendo permisos actuales del vCenter..." -ForegroundColor Cyan
+
+$allPermissions = Get-VIPermission
+ 
+# ============================
+
+# OBTENER TODOS LOS ROLES QUE PERMITEN CREAR SNAPSHOT
+
+# ============================
+
+Write-Host "Buscando roles con privilegio de crear snapshot..." -ForegroundColor Cyan
+ 
+$rolesSnapshot = foreach ($role in Get-VIRole) {
+
+    try {
+
+        $privs = Get-VIPrivilege -Role $role -ErrorAction Stop
+ 
+        if ($privs.Id -contains $snapshotPrivId) {
+ 
+            $permsRol = $allPermissions | Where-Object {
+
+                $_.Role -eq $role.Name
+
+            }
+ 
+            [PSCustomObject]@{
+
+                vCenter          = $vCenter
+
+                Rol              = $role.Name
+
+                Privilegio       = $snapshotPrivId
+
+                PermiteSnapshot  = "Si"
+
+                EnUso            = if ($permsRol) { "Si" } else { "No" }
+
+                CantAsignaciones = ($permsRol | Measure-Object).Count
+
+            }
+
+        }
+
+    }
+
+    catch {
+
+        Write-Warning "No se pudieron leer los privilegios del rol '$($role.Name)': $($_.Exception.Message)"
+
+    }
+
+}
+ 
+# ============================
+
+# DETALLE: USUARIOS Y GRUPOS QUE USAN ESOS ROLES
+
+# ============================
+
+Write-Host "Generando detalle de usuarios y grupos..." -ForegroundColor Cyan
+ 
+$detalleUso = foreach ($rol in $rolesSnapshot) {
+ 
+    $permsRol = $allPermissions | Where-Object {
+
+        $_.Role -eq $rol.Rol
+
+    }
+ 
+    if ($permsRol) {
+ 
+        foreach ($perm in $permsRol) {
+ 
+            # ============================
+
+            # DETECTAR TIPO DE PRINCIPAL
+
+            # ============================
+
+            $tipoPrincipal = "Principal"
+ 
+            if ($perm.Principal -match "^(VMWARE|VSPHERE)\.LOCAL\\vpxd-") {
+
+                $tipoPrincipal = "Servicio interno vCenter"
+
+            }
+
+            elseif ($perm.PSObject.Properties.Name -contains "Group") {
+
+                $tipoPrincipal = if ($perm.Group) { "Grupo" } else { "Usuario" }
+
+            }
+
+            elseif ($perm.PSObject.Properties.Name -contains "IsGroup") {
+
+                $tipoPrincipal = if ($perm.IsGroup) { "Grupo" } else { "Usuario" }
+
+            }
+
+            else {
+
+                $tipoPrincipal = "Usuario/Grupo no determinado"
+
+            }
+ 
+            # ============================
+
+            # DATOS DEL OBJETO
+
+            # ============================
+
+            $objetoNombre = ""
+
+            $tipoObjeto = ""
+ 
+            if ($perm.Entity) {
+
+                $objetoNombre = $perm.Entity.Name
+
+                $tipoObjeto = $perm.Entity.GetType().Name
+
+            }
+ 
+            [PSCustomObject]@{
+
+                vCenter         = $vCenter
+
+                Rol             = $rol.Rol
+
+                Privilegio      = $snapshotPrivId
+
+                PermiteSnapshot = "Si"
+
+                EnUso           = "Si"
+
+                Principal       = $perm.Principal
+
+                TipoPrincipal   = $tipoPrincipal
+
+                Objeto          = $objetoNombre
+
+                TipoObjeto      = $tipoObjeto
+
+                Propagate       = $perm.Propagate
+
+            }
+
+        }
+
+    }
+
+    else {
+ 
+        # Rol que permite snapshot pero NO está asignado a nadie
+
+        [PSCustomObject]@{
+
+            vCenter         = $vCenter
+
+            Rol             = $rol.Rol
+
+            Privilegio      = $snapshotPrivId
+
+            PermiteSnapshot = "Si"
+
+            EnUso           = "No"
+
+            Principal       = "Sin usuario/grupo asignado"
+
+            TipoPrincipal   = ""
+
+            Objeto          = ""
+
+            TipoObjeto      = ""
+
+            Propagate       = ""
+
+        }
+
+    }
+
+}
+ 
+# ============================
+
+# EXPORTAR RESUMEN
+
+# ============================
+
+$rolesSnapshot |
+
+    Sort-Object EnUso, Rol |
+
+    Export-Csv -Path $csvResumenPath -NoTypeInformation -Encoding UTF8
+ 
+# ============================
+
+# EXPORTAR DETALLE
+
+# ============================
+
+$detalleUso |
+
+    Sort-Object Rol, TipoPrincipal, Principal, Objeto |
+
+    Export-Csv -Path $csvDetallePath -NoTypeInformation -Encoding UTF8
+ 
+# ============================
+
+# MOSTRAR RESULTADOS
+
+# ============================
+
+Write-Host ""
+
+Write-Host "Reporte resumen generado en:" -ForegroundColor Green
+
+Write-Host $csvResumenPath -ForegroundColor Green
+ 
+Write-Host ""
+
+Write-Host "Reporte detalle generado en:" -ForegroundColor Green
+
+Write-Host $csvDetallePath -ForegroundColor Green
+ 
+Write-Host ""
+
+Write-Host "Total de roles con permiso de crear snapshot: $($rolesSnapshot.Count)" -ForegroundColor Cyan
+
+Write-Host "Roles en uso: $(($rolesSnapshot | Where-Object { $_.EnUso -eq 'Si' } | Measure-Object).Count)" -ForegroundColor Cyan
+
+Write-Host "Roles sin uso: $(($rolesSnapshot | Where-Object { $_.EnUso -eq 'No' } | Measure-Object).Count)" -ForegroundColor Cyan
+
+Write-Host "Total de asignaciones encontradas: $(($detalleUso | Where-Object { $_.EnUso -eq 'Si' } | Measure-Object).Count)" -ForegroundColor Cyan
+ 
+Write-Host ""
+
+Write-Host "Vista rapida:" -ForegroundColor Yellow
+
+$detalleUso | Format-Table Rol, EnUso, Principal, TipoPrincipal, Objeto, Propagate -AutoSize
+
+ 
