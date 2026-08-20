@@ -1,0 +1,173 @@
+AUDITAR DS SI SON RR Y IOPS 1
+ 
+ 
+# =====================================================
+
+# Audit Datastores VMFS - RoundRobin + IOPS=1 por Cluster
+
+# PowerCLI - Solo lectura
+
+# Exporta CSV
+
+# =====================================================
+ 
+# -------- MODIFICAR ESTOS VALORES --------
+
+$vCenter     = "xxxx.com" (CAMBIAR ACA)
+
+$ClusterName = "cluster##name" (CAMBIAR ACA)
+
+$CsvPath = "C:\Temp\Audit_RR_IOPS1_$ClusterName.csv" 
+
+# -----------------------------------------
+ 
+# Ignorar certificado SSL no confiable del vCenter
+
+Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false | Out-Null
+ 
+# Conectar a vCenter
+
+Connect-VIServer $vCenter
+ 
+# Crear carpeta si no existe
+
+$folder = Split-Path $CsvPath
+
+if (!(Test-Path $folder)) {
+
+    New-Item -ItemType Directory -Path $folder | Out-Null
+
+}
+ 
+$result = @()
+ 
+# Obtener hosts del cluster
+
+$hosts = Get-Cluster $ClusterName | Get-VMHost | Sort-Object Name
+ 
+foreach ($vmhost in $hosts) {
+ 
+    Write-Host "Procesando host: $($vmhost.Name)..." -ForegroundColor Cyan
+ 
+    $esxcli = Get-EsxCli -VMHost $vmhost -V2
+
+    $luns   = Get-ScsiLun -VMHost $vmhost -LunType disk
+
+    $dss    = $vmhost | Get-Datastore | Where-Object { $_.Type -eq "VMFS" }
+ 
+    foreach ($ds in $dss) {
+ 
+        foreach ($extent in $ds.ExtensionData.Info.Vmfs.Extent) {
+ 
+            $lun = $luns | Where-Object { $_.CanonicalName -eq $extent.DiskName } | Select-Object -First 1
+ 
+            if (!$lun) {
+
+                continue
+
+            }
+ 
+            $iops = "N/A"
+ 
+            if ($lun.MultipathPolicy -eq "RoundRobin") {
+ 
+                try {
+
+                    $args = $esxcli.storage.nmp.psp.roundrobin.deviceconfig.get.CreateArgs()
+
+                    $args.device = $lun.CanonicalName
+ 
+                    $rrConfig = $esxcli.storage.nmp.psp.roundrobin.deviceconfig.get.Invoke($args)
+
+                    $raw = $rrConfig | Format-List * | Out-String
+ 
+                    if ($raw -match "IOOperation\s*Limit\s*:\s*(\d+)") {
+
+                        $iops = $matches[1]
+
+                    }
+
+                    elseif ($raw -match "IOOperationLimit\s*:\s*(\d+)") {
+
+                        $iops = $matches[1]
+
+                    }
+
+                    elseif ($raw -match "Iops\s*:\s*(\d+)") {
+
+                        $iops = $matches[1]
+
+                    }
+
+                    else {
+
+                        $iops = "Unknown"
+
+                    }
+
+                }
+
+                catch {
+
+                    $iops = "Error"
+
+                }
+
+            }
+ 
+            $isRR    = ($lun.MultipathPolicy -eq "RoundRobin")
+
+            $isIOPS1 = ([string]$iops -eq "1")
+ 
+            $result += [PSCustomObject]@{
+
+                Cluster         = $ClusterName
+
+                VMHost          = $vmhost.Name
+
+                Datastore       = $ds.Name
+
+                Device          = $lun.CanonicalName
+
+                MultipathPolicy = $lun.MultipathPolicy
+
+                IOPS            = $iops
+
+                IsRoundRobin    = if ($isRR) { "Yes" } else { "No" }
+
+                IsIOPS1         = if ($isIOPS1) { "Yes" } else { "No" }
+
+                Compliance      = if ($isRR -and $isIOPS1) { "OK" } else { "FAIL" }
+
+            }
+
+        }
+
+    }
+
+}
+ 
+# Exportar CSV
+
+$result |
+
+    Sort-Object VMHost, Datastore, Device |
+
+    Export-Csv -Path $CsvPath -NoTypeInformation -Encoding UTF8
+ 
+Write-Host ""
+
+Write-Host "CSV generado en: $CsvPath" -ForegroundColor Green
+
+Write-Host ""
+ 
+# Resumen en pantalla
+
+$result |
+
+    Group-Object Compliance |
+
+    Select-Object Name, Count |
+
+    Format-Table -AutoSize
+ 
